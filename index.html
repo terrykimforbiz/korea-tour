@@ -1250,8 +1250,8 @@ function openAddPlaceModal() {
       <input type="text" id="newPlaceDesc" placeholder="关于景点的说明...">
     </div>
     <div class="modal-field">
-      <label>地图链接（留空自动生成）</label>
-      <input type="text" id="newPlaceUrl" placeholder="https://...">
+      <label>地图链接（粘贴Google Maps链接自动获取坐标）</label>
+      <input type="text" id="newPlaceUrl" placeholder="粘贴Google Maps链接..." oninput="onMapUrlPaste('newPlaceLat','newPlaceLng')(event)">
     </div>
     <div class="modal-field">
       <label>纬度（留空自动搜索）</label>
@@ -1272,10 +1272,9 @@ async function addCustomPlace() {
   const name = document.getElementById('newPlaceName').value.trim();
   if (!name) return;
 
-  // 버튼 로딩 상태
   const btn = document.getElementById('addPlaceBtn');
   btn.disabled = true;
-  btn.textContent = '搜索中...';
+  btn.textContent = '搜索坐标中...';
 
   const cat = document.getElementById('newPlaceCat').value;
   const district = document.getElementById('newPlaceDistrict').value.trim();
@@ -1286,21 +1285,17 @@ async function addCustomPlace() {
 
   const id = 'c' + Date.now();
   const emoji = CATEGORY_EMOJI[cat] || '📍';
-  const krName = toSearchName(name);
-  const mapUrl = url || `https://map.kakao.com/?q=${encodeURIComponent(krName)}`;
 
-  // 위도/경도 미입력 시 한국어로 변환 후 자동 검색
+  // 위도/경도 미입력 시: URL 파싱 → 영문+,Jeju / 한글+제주 → Nominatim 검색
   if (!lat || !lng) {
     try {
-      const coords = await geocodePlace(krName);
-      if (coords) {
-        lat = coords.lat;
-        lng = coords.lng;
-      }
-    } catch(e) {
-      console.error('Geocode failed', e);
-    }
+      const coords = await geocodePlace(name, url);
+      if (coords) { lat = coords.lat; lng = coords.lng; }
+    } catch(e) { console.error('Geocode failed', e); }
   }
+
+  // 좌표 포함된 긴 Google Maps URL 생성
+  const mapUrl = url || buildGoogleMapsUrl(name, lat, lng);
 
   state.customPlaces.push({ id, name, category: cat, emoji, district, desc, mapUrl, lat, lng });
   saveToUrl();
@@ -1308,26 +1303,84 @@ async function addCustomPlace() {
   renderPlaces();
 }
 
-// Nominatim 지오코딩 - 한국어로 변환 후 좌표 자동 검색
-async function geocodePlace(krName) {
-  // 제주도 범위 내에서 한국어로 검색
-  const query = krName + ' 제주';
-  const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&viewbox=126.1,33.1,127.0,33.6&bounded=0&limit=1`;
-  try {
-    const res = await fetch(url, { headers: { 'Accept-Language': 'ko' } });
-    const data = await res.json();
-    if (data && data.length > 0) {
-      return { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
-    }
-    // 제주 없이 재시도
-    const url2 = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(krName)}&limit=1`;
-    const res2 = await fetch(url2, { headers: { 'Accept-Language': 'ko' } });
-    const data2 = await res2.json();
-    if (data2 && data2.length > 0) {
-      return { lat: parseFloat(data2[0].lat), lng: parseFloat(data2[0].lon) };
-    }
-  } catch(e) { console.error('Geocode error', e); }
+// Google Maps URL에서 경위도 추출
+function parseCoordsFromUrl(url) {
+  if (!url) return null;
+  // @33.1234,126.5678 패턴 (Google Maps)
+  let m = url.match(/@(-?\d+\.?\d*),(-?\d+\.?\d*)/);
+  if (m) return { lat: parseFloat(m[1]), lng: parseFloat(m[2]) };
+  // !3d33.1234!4d126.5678 패턴 (Google Maps embed)
+  m = url.match(/!3d(-?\d+\.?\d*)!4d(-?\d+\.?\d*)/);
+  if (m) return { lat: parseFloat(m[1]), lng: parseFloat(m[2]) };
+  // q=33.1234,126.5678 패턴
+  m = url.match(/[?&]q=(-?\d+\.?\d*),(-?\d+\.?\d*)/);
+  if (m) return { lat: parseFloat(m[1]), lng: parseFloat(m[2]) };
+  // ll=33.1234,126.5678 패턴
+  m = url.match(/[?&]ll=(-?\d+\.?\d*),(-?\d+\.?\d*)/);
+  if (m) return { lat: parseFloat(m[1]), lng: parseFloat(m[2]) };
   return null;
+}
+
+// 영문 포함 여부 판별
+function hasLatin(str) { return /[a-zA-Z]/.test(str); }
+
+// 제주도 바운딩 박스 (검색 범위 한정)
+const JEJU_VIEWBOX = '126.1,33.1,127.0,33.6';
+
+// 좌표 검색: 1) Google Maps URL 파싱 → 2) 제주도 범위 한정 Nominatim 검색
+async function geocodePlace(name, mapUrlInput) {
+  // 1단계: 사용자가 입력한 Google Maps URL에서 좌표 추출
+  if (mapUrlInput) {
+    const parsed = parseCoordsFromUrl(mapUrlInput);
+    if (parsed) return parsed;
+  }
+  // 2단계: Nominatim 검색 (제주도 범위 강제 한정: bounded=1)
+  const krName = toSearchName(name);
+  const queries = [
+    name + (hasLatin(name) ? ', Jeju' : ' 제주'),
+    krName + ' 제주',
+    krName,
+  ];
+  for (const query of queries) {
+    try {
+      const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&viewbox=${JEJU_VIEWBOX}&bounded=1&limit=3`;
+      const res = await fetch(url, { headers: { 'Accept-Language': 'ko' } });
+      const data = await res.json();
+      // 제주도 범위 내 결과만 필터링 (위도 33.0~33.6, 경도 126.0~127.1)
+      const jeju = data.filter(r => {
+        const lat = parseFloat(r.lat), lon = parseFloat(r.lon);
+        return lat >= 33.0 && lat <= 33.7 && lon >= 126.0 && lon <= 127.1;
+      });
+      if (jeju.length > 0) {
+        return { lat: parseFloat(jeju[0].lat), lng: parseFloat(jeju[0].lon) };
+      }
+    } catch(e) { console.error('Geocode error', e); }
+  }
+  return null;
+}
+
+// 좌표가 포함된 Google Maps URL 생성 (짧은 URL 대신 긴 URL)
+function buildGoogleMapsUrl(name, lat, lng) {
+  const krName = toSearchName(name);
+  const searchName = krName + ' 제주';
+  if (lat && lng) {
+    return `https://www.google.com/maps/place/${encodeURIComponent(searchName)}/@${lat},${lng},17z`;
+  }
+  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(searchName)}`;
+}
+
+// Google Maps URL 붙여넣기 시 자동으로 경위도 추출
+function onMapUrlPaste(latFieldId, lngFieldId) {
+  return function(e) {
+    setTimeout(() => {
+      const url = e.target.value;
+      const coords = parseCoordsFromUrl(url);
+      if (coords) {
+        document.getElementById(latFieldId).value = coords.lat;
+        document.getElementById(lngFieldId).value = coords.lng;
+      }
+    }, 100);
+  };
 }
 
 function openPlaceEditModal(id) {
@@ -1361,8 +1414,8 @@ function openPlaceEditModal(id) {
       <input type="text" id="editPlaceDesc" value="${descEscaped}" placeholder="关于景点的说明...">
     </div>
     <div class="modal-field">
-      <label>地图链接</label>
-      <input type="text" id="editPlaceUrl" value="${urlEscaped}" placeholder="https://...">
+      <label>地图链接（粘贴Google Maps链接自动获取坐标）</label>
+      <input type="text" id="editPlaceUrl" value="${urlEscaped}" placeholder="粘贴Google Maps链接..." oninput="onMapUrlPaste('editPlaceLat','editPlaceLng')(event)">
     </div>
     <div class="modal-field">
       <label>纬度（留空自动搜索）</label>
@@ -1374,16 +1427,12 @@ function openPlaceEditModal(id) {
     </div>
     <div class="modal-actions">
       <button class="modal-btn secondary" onclick="closeModal()">取消</button>
-      <button class="modal-btn primary" id="editPlaceBtn" onclick="savePlaceEdit('${id}').catch(e=>console.error(e))">保存</button>
+      <button class="modal-btn primary" onclick="savePlaceEdit('${id}').catch(e=>console.error(e))">保存</button>
     </div>
   `);
 }
 
 async function savePlaceEdit(id) {
-  const btn = document.getElementById('editPlaceBtn');
-  btn.disabled = true;
-  btn.textContent = '保存中...';
-
   const name = document.getElementById('editPlaceName').value.trim();
   const category = document.getElementById('editPlaceCat').value;
   const district = document.getElementById('editPlaceDistrict').value.trim();
@@ -1393,17 +1442,16 @@ async function savePlaceEdit(id) {
   let lng = parseFloat(document.getElementById('editPlaceLng').value) || null;
   const emoji = CATEGORY_EMOJI[category] || '📍';
 
-  // 좌표 없으면 자동 검색
+  // 좌표 없으면: URL 파싱 → 한글번역+제주 → Nominatim 검색
   if (!lat || !lng) {
     try {
-      const krName = toSearchName(name);
-      const coords = await geocodePlace(krName);
+      const coords = await geocodePlace(name, mapUrl);
       if (coords) { lat = coords.lat; lng = coords.lng; }
     } catch(e) { console.error('Geocode failed', e); }
   }
 
-  const krName = toSearchName(name);
-  const finalMapUrl = mapUrl || `https://map.kakao.com/?q=${encodeURIComponent(krName)}`;
+  // 좌표 포함된 긴 Google Maps URL 생성
+  const finalMapUrl = mapUrl || buildGoogleMapsUrl(name, lat, lng);
 
   if (id.startsWith('c')) {
     const cp = state.customPlaces.find(p => p.id === id);
