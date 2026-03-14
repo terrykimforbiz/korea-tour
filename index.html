@@ -1263,7 +1263,7 @@ function openAddPlaceModal() {
     </div>
     <div class="modal-actions">
       <button class="modal-btn secondary" onclick="closeModal()">取消</button>
-      <button class="modal-btn primary" onclick="addCustomPlace()">添加</button>
+      <button class="modal-btn primary" id="addPlaceBtn" onclick="addCustomPlace().catch(e=>console.error(e))">添加</button>
     </div>
   `);
 }
@@ -1271,6 +1271,12 @@ function openAddPlaceModal() {
 async function addCustomPlace() {
   const name = document.getElementById('newPlaceName').value.trim();
   if (!name) return;
+
+  // 버튼 로딩 상태
+  const btn = document.getElementById('addPlaceBtn');
+  btn.disabled = true;
+  btn.textContent = '搜索中...';
+
   const cat = document.getElementById('newPlaceCat').value;
   const district = document.getElementById('newPlaceDistrict').value.trim();
   const desc = document.getElementById('newPlaceDesc').value.trim();
@@ -1280,15 +1286,19 @@ async function addCustomPlace() {
 
   const id = 'c' + Date.now();
   const emoji = CATEGORY_EMOJI[cat] || '📍';
-  const searchName = toSearchName(name);
-  const mapUrl = url || `https://map.kakao.com/?q=${encodeURIComponent(searchName)}`;
+  const krName = toSearchName(name);
+  const mapUrl = url || `https://map.kakao.com/?q=${encodeURIComponent(krName)}`;
 
-  // 위도/경도 미입력 시 자동 검색
+  // 위도/경도 미입력 시 한국어로 변환 후 자동 검색
   if (!lat || !lng) {
-    const coords = await geocodePlace(searchName);
-    if (coords) {
-      lat = coords.lat;
-      lng = coords.lng;
+    try {
+      const coords = await geocodePlace(krName);
+      if (coords) {
+        lat = coords.lat;
+        lng = coords.lng;
+      }
+    } catch(e) {
+      console.error('Geocode failed', e);
     }
   }
 
@@ -1298,20 +1308,20 @@ async function addCustomPlace() {
   renderPlaces();
 }
 
-// Nominatim 지오코딩 - 장소명으로 좌표 자동 검색
-async function geocodePlace(name) {
-  // 제주도 범위 내에서 우선 검색
-  const query = name + ' Jeju';
+// Nominatim 지오코딩 - 한국어로 변환 후 좌표 자동 검색
+async function geocodePlace(krName) {
+  // 제주도 범위 내에서 한국어로 검색
+  const query = krName + ' 제주';
   const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&viewbox=126.1,33.1,127.0,33.6&bounded=0&limit=1`;
   try {
-    const res = await fetch(url, { headers: { 'Accept-Language': 'en' } });
+    const res = await fetch(url, { headers: { 'Accept-Language': 'ko' } });
     const data = await res.json();
     if (data && data.length > 0) {
       return { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
     }
     // 제주 없이 재시도
-    const url2 = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(name)}&limit=1`;
-    const res2 = await fetch(url2, { headers: { 'Accept-Language': 'en' } });
+    const url2 = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(krName)}&limit=1`;
+    const res2 = await fetch(url2, { headers: { 'Accept-Language': 'ko' } });
     const data2 = await res2.json();
     if (data2 && data2.length > 0) {
       return { lat: parseFloat(data2[0].lat), lng: parseFloat(data2[0].lon) };
@@ -1323,12 +1333,28 @@ async function geocodePlace(name) {
 function openPlaceEditModal(id) {
   const place = findPlace(id);
   if (!place) return;
+  const nameEscaped = (place.name || '').replace(/"/g, '&quot;');
   const descEscaped = (place.desc || '').replace(/"/g, '&quot;');
   const urlEscaped = (place.mapUrl || '').replace(/"/g, '&quot;');
+  const districtEscaped = (place.district || '').replace(/"/g, '&quot;');
   openModal(`
     <div class="modal-title">编辑景点</div>
-    <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px;font-size:16px;font-weight:700">
-      <span style="font-size:24px">${place.emoji}</span> ${place.name}
+    <div class="modal-field">
+      <label>景点名称</label>
+      <input type="text" id="editPlaceName" value="${nameEscaped}" placeholder="景点名称...">
+    </div>
+    <div class="modal-field">
+      <label>类别</label>
+      <select id="editPlaceCat">
+        <option value="hotel" ${place.category==='hotel'?'selected':''}>🏨 住宿</option>
+        <option value="food" ${place.category==='food'?'selected':''}>🍜 美食</option>
+        <option value="sight" ${place.category==='sight'?'selected':''}>🗺️ 观光</option>
+        <option value="transport" ${place.category==='transport'?'selected':''}>🚇 交通</option>
+      </select>
+    </div>
+    <div class="modal-field">
+      <label>地区</label>
+      <input type="text" id="editPlaceDistrict" value="${districtEscaped}" placeholder="例如：济州市、西归浦市...">
     </div>
     <div class="modal-field">
       <label>说明</label>
@@ -1338,25 +1364,57 @@ function openPlaceEditModal(id) {
       <label>地图链接</label>
       <input type="text" id="editPlaceUrl" value="${urlEscaped}" placeholder="https://...">
     </div>
+    <div class="modal-field">
+      <label>纬度（留空自动搜索）</label>
+      <input type="number" step="any" id="editPlaceLat" value="${place.lat||''}" placeholder="自动获取">
+    </div>
+    <div class="modal-field">
+      <label>经度（留空自动搜索）</label>
+      <input type="number" step="any" id="editPlaceLng" value="${place.lng||''}" placeholder="自动获取">
+    </div>
     <div class="modal-actions">
       <button class="modal-btn secondary" onclick="closeModal()">取消</button>
-      <button class="modal-btn primary" onclick="savePlaceEdit('${id}')">保存</button>
+      <button class="modal-btn primary" id="editPlaceBtn" onclick="savePlaceEdit('${id}').catch(e=>console.error(e))">保存</button>
     </div>
   `);
 }
 
-function savePlaceEdit(id) {
+async function savePlaceEdit(id) {
+  const btn = document.getElementById('editPlaceBtn');
+  btn.disabled = true;
+  btn.textContent = '保存中...';
+
+  const name = document.getElementById('editPlaceName').value.trim();
+  const category = document.getElementById('editPlaceCat').value;
+  const district = document.getElementById('editPlaceDistrict').value.trim();
   const desc = document.getElementById('editPlaceDesc').value.trim();
   const mapUrl = document.getElementById('editPlaceUrl').value.trim();
+  let lat = parseFloat(document.getElementById('editPlaceLat').value) || null;
+  let lng = parseFloat(document.getElementById('editPlaceLng').value) || null;
+  const emoji = CATEGORY_EMOJI[category] || '📍';
+
+  // 좌표 없으면 자동 검색
+  if (!lat || !lng) {
+    try {
+      const krName = toSearchName(name);
+      const coords = await geocodePlace(krName);
+      if (coords) { lat = coords.lat; lng = coords.lng; }
+    } catch(e) { console.error('Geocode failed', e); }
+  }
+
+  const krName = toSearchName(name);
+  const finalMapUrl = mapUrl || `https://map.kakao.com/?q=${encodeURIComponent(krName)}`;
+
   if (id.startsWith('c')) {
     const cp = state.customPlaces.find(p => p.id === id);
     if (cp) {
-      cp.desc = desc;
-      if (mapUrl) cp.mapUrl = mapUrl;
+      cp.name = name; cp.category = category; cp.emoji = emoji;
+      cp.district = district; cp.desc = desc; cp.mapUrl = finalMapUrl;
+      cp.lat = lat; cp.lng = lng;
     }
   } else {
     if (!state.placeEdits) state.placeEdits = {};
-    state.placeEdits[id] = { desc, ...(mapUrl ? { mapUrl } : {}) };
+    state.placeEdits[id] = { name, category, emoji, district, desc, mapUrl: finalMapUrl, lat, lng };
   }
   saveToUrl();
   closeModal();
