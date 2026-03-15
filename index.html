@@ -486,11 +486,42 @@ nav.tab-bar button.active::before {
 }
 .modal-overlay.show .modal-sheet { transform: translateY(0); }
 
-.modal-handle {
+.modal-handle-bar {
+  position: sticky;
+  top: -20px;
+  margin: -20px -16px 0;
+  padding: 10px 16px 6px;
+  background: var(--card);
+  border-radius: 18px 18px 0 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+.modal-handle-bar .handle-line {
   width: 36px; height: 4px;
-  background: rgba(179,157,219,.3);
+  background: rgba(179,157,219,.4);
   border-radius: 2px;
-  margin: 0 auto 16px;
+}
+.modal-handle-bar .modal-close-x {
+  position: absolute;
+  right: 14px;
+  top: 8px;
+  width: 28px; height: 28px;
+  border-radius: 50%;
+  background: rgba(0,0,0,.06);
+  border: none;
+  font-size: 16px;
+  color: var(--text-dim);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: inherit;
+}
+.modal-handle-bar .modal-close-x:hover {
+  background: rgba(0,0,0,.12);
 }
 
 .modal-title {
@@ -873,7 +904,8 @@ document.querySelectorAll('.tab-bar button').forEach(btn => {
 // ─── Modal ───
 function openModal(html) {
   const overlay = document.getElementById('modalOverlay');
-  document.getElementById('modalSheet').innerHTML = '<div class="modal-handle"></div>' + html;
+  const handleBar = `<div class="modal-handle-bar" onclick="closeModal()"><span class="handle-line"></span><button class="modal-close-x" onclick="event.stopPropagation();closeModal()">✕</button></div>`;
+  document.getElementById('modalSheet').innerHTML = handleBar + html;
   requestAnimationFrame(() => overlay.classList.add('show'));
 }
 
