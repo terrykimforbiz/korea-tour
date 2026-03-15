@@ -209,9 +209,42 @@ nav.tab-bar button.active::before {
 
 /* ── Schedule tab ── */
 .schedule-wrap {
-  overflow-x: auto;
+  overflow: auto;
   padding: 12px;
   min-height: 100%;
+  position: relative;
+}
+.schedule-inner {
+  transform-origin: 0 0;
+  transition: transform .15s ease;
+}
+.schedule-zoom-bar {
+  position: sticky;
+  top: 0; right: 0;
+  z-index: 5;
+  display: flex;
+  justify-content: flex-end;
+  gap: 4px;
+  padding-bottom: 8px;
+}
+.schedule-zoom-bar button {
+  width: 32px; height: 32px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--card);
+  font-size: 16px;
+  cursor: pointer;
+  color: var(--text);
+  font-family: inherit;
+  box-shadow: 0 1px 4px rgba(0,0,0,.08);
+  display: flex; align-items: center; justify-content: center;
+}
+.schedule-zoom-bar button:active { background: #f0e8fa; }
+.schedule-zoom-bar .zoom-level {
+  font-size: 11px;
+  color: var(--text-dim);
+  display: flex; align-items: center;
+  min-width: 36px; justify-content: center;
 }
 
 .schedule-table {
@@ -1094,9 +1127,25 @@ function updateMapMarkers() {
 }
 
 // ─── SCHEDULE ───
+let scheduleZoom = 1;
+
+function setScheduleZoom(delta) {
+  scheduleZoom = Math.min(1.5, Math.max(0.4, scheduleZoom + delta));
+  const inner = document.getElementById('scheduleInner');
+  if (inner) inner.style.transform = `scale(${scheduleZoom})`;
+  const label = document.getElementById('zoomLabel');
+  if (label) label.textContent = Math.round(scheduleZoom * 100) + '%';
+}
+
 function renderSchedule() {
   const wrap = document.getElementById('scheduleWrap');
-  let html = '<table class="schedule-table"><thead><tr><th class="time-col">时间</th>';
+  let html = `<div class="schedule-zoom-bar">
+    <button onclick="event.stopPropagation();setScheduleZoom(-0.1)">−</button>
+    <span class="zoom-level" id="zoomLabel">${Math.round(scheduleZoom * 100)}%</span>
+    <button onclick="event.stopPropagation();setScheduleZoom(0.1)">+</button>
+  </div>`;
+  html += `<div class="schedule-inner" id="scheduleInner" style="transform:scale(${scheduleZoom})">`;
+  html += '<table class="schedule-table"><thead><tr><th class="time-col">时间</th>';
   DATES.forEach(d => {
     html += `<th><span class="day-date" style="color:${DATE_COLORS[d]}">${DATE_LABELS[d]}</span></th>`;
   });
@@ -1126,9 +1175,10 @@ function renderSchedule() {
     html += '</tr>';
   });
 
-  html += '</tbody></table>';
+  html += '</tbody></table></div>';
   wrap.innerHTML = html;
   initScheduleDrag();
+  initSchedulePinch();
 }
 
 function openPlacePicker(slotKey) {
@@ -1274,6 +1324,46 @@ function initScheduleDrag() {
   document.addEventListener('touchmove', onDragTouchMove, { passive: false });
   document.addEventListener('touchend', onDragTouchEnd);
   document.addEventListener('touchcancel', onDragTouchEnd);
+}
+
+// ─── 捏合缩放 (Pinch-to-Zoom) ───
+let _pinchInited = false;
+let pinchStartDist = 0;
+let pinchStartZoom = 1;
+
+function initSchedulePinch() {
+  if (_pinchInited) return;
+  _pinchInited = true;
+
+  const wrap = document.getElementById('scheduleWrap');
+  if (!wrap) return;
+
+  wrap.addEventListener('touchstart', function(e) {
+    if (e.touches.length === 2) {
+      e.preventDefault();
+      pinchStartDist = getTouchDist(e.touches);
+      pinchStartZoom = scheduleZoom;
+    }
+  }, { passive: false });
+
+  wrap.addEventListener('touchmove', function(e) {
+    if (e.touches.length === 2) {
+      e.preventDefault();
+      const dist = getTouchDist(e.touches);
+      const ratio = dist / pinchStartDist;
+      scheduleZoom = Math.min(1.5, Math.max(0.4, pinchStartZoom * ratio));
+      const inner = document.getElementById('scheduleInner');
+      if (inner) inner.style.transform = `scale(${scheduleZoom})`;
+      const label = document.getElementById('zoomLabel');
+      if (label) label.textContent = Math.round(scheduleZoom * 100) + '%';
+    }
+  }, { passive: false });
+}
+
+function getTouchDist(touches) {
+  const dx = touches[0].clientX - touches[1].clientX;
+  const dy = touches[0].clientY - touches[1].clientY;
+  return Math.sqrt(dx * dx + dy * dy);
 }
 
 function isInSchedule(el) {
