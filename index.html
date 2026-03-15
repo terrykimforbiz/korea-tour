@@ -281,13 +281,42 @@ nav.tab-bar button.active::before {
   align-items: center;
   gap: 4px;
   border-left: 3px solid var(--text-dim);
-  transition: background .15s;
+  transition: background .15s, transform .15s, box-shadow .15s;
   position: relative;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
 }
 .sched-card:hover { background: #ece4f6; }
+.sched-card.dragging { opacity: 0.3; }
 .sched-card .sc-emoji { font-size: 13px; flex-shrink: 0; }
 .sched-card .sc-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; }
 .sched-card .sc-memo { font-size: 9px; color: var(--text-dim); display: block; margin-top: 1px; }
+
+.drag-ghost {
+  position: fixed;
+  z-index: 9999;
+  pointer-events: none;
+  background: var(--bg);
+  border-radius: 8px;
+  padding: 5px 8px;
+  font-size: 11px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  border-left: 3px solid var(--primary);
+  box-shadow: 0 6px 20px rgba(0,0,0,.2);
+  transform: scale(1.05);
+  opacity: 0.95;
+  max-width: 140px;
+  font-family: inherit;
+}
+
+.schedule-table td.drag-over {
+  background: rgba(179,157,219,.18) !important;
+  box-shadow: inset 0 0 0 2px var(--primary);
+  border-radius: 4px;
+}
 
 /* ── Places tab ── */
 .places-wrap {
@@ -660,16 +689,16 @@ for (let h = 6; h <= 23; h++) {
 }
 
 const CATEGORY_STYLE = {
-  hotel:     { color: '#90caf9', label: '住宿' },
-  food:      { color: '#ffcc80', label: '美食' },
-  sight:     { color: '#a5d6a7', label: '观光' },
-  transport: { color: '#bdbdbd', label: '交通' },
+  hotel:     { color: '#90caf9', label: '交通住宿' },
+  food:      { color: '#ffcc80', label: '美食咖啡' },
+  sight:     { color: '#a5d6a7', label: '景点游玩' },
+  shopping:  { color: '#f48fb1', label: '买买买买' },
 };
 
-const CATEGORY_EMOJI = { hotel:'🏨', food:'🍜', sight:'🗺️', transport:'🚇' };
+const CATEGORY_EMOJI = { hotel:'🏨', food:'☕', sight:'🗺️', shopping:'🛍️' };
 
 // 地区排列顺序 (济州岛)
-const DISTRICT_ORDER = ['济州市','济州国际机场','涯月邑','翰林邑','朝天邑','旧左邑','表善面','南元邑','西归浦市','中文','大静邑','安德面'];
+const DISTRICT_ORDER = ['济州市区','济州西','济州南','济州东','牛岛'];
 
 // 中文/英文→韩文 常用地名映射（用于地图搜索）
 const TO_KR_MAP = {
@@ -715,7 +744,43 @@ function toSearchName(name) {
   return result;
 }
 
-const PRESET_PLACES = [];
+const PRESET_PLACES = [
+  // ── 3/19 ──
+  {id:'p1',name:'济州国际机场',nameKr:'제주공항',nameEn:'Jeju International Airport',category:'hotel',emoji:'✈️',district:'济州市区',planDate:'0319',desc:'济州岛唯一国际机场，大部分行程起点。',mapUrl:'https://www.google.com/maps/place/Jeju+International+Airport/@33.5070772,126.4934311,17z',lat:33.5070772,lng:126.4934311,images:['image/济州国际机场.webp']},
+  {id:'p2',name:'艾琳酒店',nameKr:'엘린호텔',nameEn:'Elin Hotel Jeju',category:'hotel',emoji:'🏨',district:'济州市区',planDate:'0319',desc:'济州市区热门住宿酒店，靠近商业街。',mapUrl:'https://www.google.com/maps/place/Elin+Hotel/@33.4893299,126.4954791,17z',lat:33.4893299,lng:126.4954791,images:['image/艾琳酒店1.jpg']},
+  {id:'p3',name:'济州实弹射击场',nameKr:'제주실탄사격장',nameEn:'Jeju Shooting Range',category:'sight',emoji:'🔫',district:'济州南',planDate:'0319',desc:'可体验真枪射击的室内体验馆。',mapUrl:'https://www.google.com/maps/place/Jeju+Shooting+Range/@33.2639361,126.3852243,17z',lat:33.2639361,lng:126.3852243,images:['image/济州实弹射击场1.jpeg','image/济州实弹射击场2.png']},
+  {id:'p4',name:'柱状节理带',nameKr:'주상절리대',nameEn:'Jusangjeolli Cliff',category:'sight',emoji:'🪨',district:'济州南',planDate:'0319',desc:'火山岩柱状节理自然景观。',mapUrl:'https://www.google.com/maps/place/%EC%A3%BC%EC%83%81%EC%A0%88%EB%A6%AC%EB%8C%80/@33.2367938,126.4254867,17z',lat:33.2367938,lng:126.4254867,images:['image/柱状节理带1.jpg']},
+  {id:'p5',name:'山茶花之丘',nameKr:'카멜리아힐',nameEn:'Camellia Hill',category:'sight',emoji:'🌺',district:'济州西',planDate:'0319',desc:'济州最大山茶花园，冬季花海著名。',mapUrl:'https://www.google.com/maps/place/Camellia+Hill+Botanical+Garden/@33.2898049,126.3682983,17z',lat:33.2898049,lng:126.3682983,images:['image/山茶花之丘1.jpeg','image/山茶花之丘2.jpeg']},
+  {id:'p6',name:'国立济州博物馆',nameKr:'국립제주박물관',nameEn:'National Museum of Jeju',category:'sight',emoji:'🏛️',district:'济州市区',planDate:'0319',desc:'展示济州历史和海洋文化的国家博物馆。',mapUrl:'https://www.google.com/maps/place/Jeju+National+Museum/@33.5133428,126.5488784,17z',lat:33.5133428,lng:126.5488784,images:['image/国立济州博物馆1.jpeg']},
+  {id:'p7',name:'偶来市场',nameKr:'서귀포올레시장',nameEn:'Seogwipo Olle Market',category:'food',emoji:'🍊',district:'济州南',planDate:'0319',desc:'西归浦传统市场，可吃橘子麻薯和海鲜。',mapUrl:'https://www.google.com/maps/place/Seogwipo+Maeil+Olle+Market/@33.2487163,126.5640617,17z',lat:33.2487163,lng:126.5640617,images:['image/偶来市场1.jpeg','image/偶来市场2.webp']},
+  {id:'p8',name:'忆起之家',nameKr:'기억나는 집',nameEn:'Eogine Seafood Soup',category:'food',emoji:'🍲',district:'济州南',planDate:'0319',desc:'当地人气海鲜锅餐厅。',mapUrl:'https://www.google.com/maps/place/Kieoknaneun+jib/@33.2450717,126.5622291,17z',lat:33.2450717,lng:126.5622291,images:['image/忆起之家1.jpg']},
+  {id:'p9',name:"RUDDY'S",nameKr:'러디스',nameEn:"Ruddy's Jeju",category:'food',emoji:'🍷',district:'济州南',planDate:'0319',desc:'西餐酒吧风格餐厅。',mapUrl:'https://www.google.com/maps/place/RUDDY%E2%80%99S/@33.231976,126.5057089,17z',lat:33.231976,lng:126.5057089,images:["image/RUDDY'S.jpg"]},
+  {id:'p10',name:'济州JW万豪大堂吧',nameKr:'JW메리어트 제주 라운지',nameEn:'JW Marriott Jeju Lounge',category:'food',emoji:'🍸',district:'济州南',planDate:'0319',desc:'海景酒店酒吧。',mapUrl:'https://www.google.com/maps/place/JW+Marriott+Jeju/@33.2430686,126.5382335,17z',lat:33.2430686,lng:126.5382335,images:['image/济州JW万豪大堂吧1.webp','image/济州JW万豪大堂吧2.jpg']},
+  {id:'p11',name:'新世界百货（西归浦）',nameKr:'신세계면세점 서귀포',nameEn:'Shinsegae Seogwipo',category:'shopping',emoji:'🛍️',district:'济州南',planDate:'0319',desc:'西归浦免税购物中心。',mapUrl:'https://www.google.com/maps/place/Jeju+premium+center/@33.3072018,126.317084,17z',lat:33.3072018,lng:126.317084,images:['image/新世界百货（西归浦）.webp']},
+  {id:'p12',name:'新罗免税店',nameKr:'신라면세점 제주',nameEn:'Shilla Duty Free Jeju',category:'shopping',emoji:'🛍️',district:'济州市区',planDate:'0319',desc:'济州最大免税店之一。',mapUrl:'https://www.google.com/maps/place/Shilla+Duty+Free/@33.4863078,126.4873872,17z',lat:33.4863078,lng:126.4873872,images:['image/新罗免税店.jpg']},
+  // ── 3/20 ──
+  {id:'p13',name:'宝健路',nameKr:'보건로',nameEn:'Baojian Road',category:'shopping',emoji:'🛒',district:'济州市区',planDate:'0320',desc:'济州年轻人聚集的商业街。',mapUrl:'https://www.google.com/maps/place/BAOJIAN+STREET/@33.4928985,126.4935102,17z',lat:33.4928985,lng:126.4935102,images:['image/宝健路.jpeg']},
+  {id:'p14',name:'涯月邑',nameKr:'애월읍',nameEn:'Aewol',category:'sight',emoji:'🌊',district:'济州西',planDate:'0320',desc:'济州最著名海岸咖啡路线。',mapUrl:'https://www.google.com/maps/place/Aewol-eup/@33.4110784,126.3939276,17z',lat:33.4110784,lng:126.3939276,images:['image/涯月邑1.jpg','image/涯月邑2.jpg']},
+  {id:'p15',name:'挟才海水浴场',nameKr:'협재해수욕장',nameEn:'Hyeopjae Beach',category:'sight',emoji:'🏖️',district:'济州西',planDate:'0320',desc:'白沙碧海著名海滩。',mapUrl:'https://www.google.com/maps/place/Hyeopjae+Beach/@33.3942945,126.2398813,17z',lat:33.3942945,lng:126.2398813,images:['image/挟才海水浴场1.jpeg','image/挟才海水浴场2.jpeg']},
+  {id:'p16',name:'追海豚',nameKr:'제주하모돌고래투어',nameEn:'Dolphin Tour Jeju',category:'sight',emoji:'🐬',district:'济州西',planDate:'0320',desc:'西海岸乘船追海豚活动。',mapUrl:'https://www.google.com/maps/place/%EC%A0%9C%EC%A3%BC%ED%95%98%EB%AA%A8%EB%8F%8C%EA%B3%A0%EB%9E%98%ED%88%AC%EC%96%B4/@33.2105452,126.2576053,17z',lat:33.2105452,lng:126.2576053,images:['image/追海豚.webp']},
+  {id:'p17',name:'山房山',nameKr:'산방산',nameEn:'Sanbangsan',category:'sight',emoji:'⛰️',district:'济州南',planDate:'0320',desc:'火山景观，可泡碳酸温泉。',mapUrl:'https://www.google.com/maps/place/Sanbangsan/@33.2410682,126.3134467,17z',lat:33.2410682,lng:126.3134467,images:['image/山房山.jpeg']},
+  {id:'p18',name:'Gwanghae涯月本店',nameKr:'제주광해 애월본점',nameEn:'Jeju Gwanghae Aewol',category:'food',emoji:'🦐',district:'济州西',planDate:'0320',desc:'济州著名海鲜餐厅。',mapUrl:'https://www.google.com/maps/place/Jeju+Gwanghae+Aewol+Main+Branch/@33.4877605,126.3904307,17z',lat:33.4877605,lng:126.3904307,images:['image/Gwanghae涯月本店1.jpg','image/Gwanghae涯月本店2.jpg']},
+  {id:'p19',name:'满月炭烤',nameKr:'만월숯불갈비 애월',nameEn:'Manwol BBQ',category:'food',emoji:'🥩',district:'济州西',planDate:'0320',desc:'涯月炭火烤肉店。',mapUrl:'https://www.google.com/maps/place/%EB%A7%8C%EC%9B%94+%EC%88%AF%EB%B6%88%EA%B5%AC%EC%9D%B4/@33.4649217,126.3108659,17z',lat:33.4649217,lng:126.3108659,images:['image/满月炭烤1.jpeg','image/满月炭烤2.jpeg']},
+  {id:'p20',name:'LAZY-PUMP',nameKr:'레이지펌프',nameEn:'Lazy Pump Cafe',category:'food',emoji:'☕',district:'济州西',planDate:'0320',desc:'海边网红咖啡馆。',mapUrl:'https://www.google.com/maps/place/Lazy+Pump/@33.4660037,126.3097954,17z',lat:33.4660037,lng:126.3097954,images:['image/LAZY-PUMP1.jpg','image/LAZY-PUMP2.jpg']},
+  {id:'p21',name:'Tribe',nameKr:'트라이브',nameEn:'Tribe Cafe',category:'food',emoji:'☕',district:'济州西',planDate:'0320',desc:'海景咖啡馆。',mapUrl:'https://www.google.com/maps/place/Tribe/@33.4603138,126.310955,17z',lat:33.4603138,lng:126.310955,images:['image/Tribe1.jpeg','image/Tribe2.jpeg']},
+  {id:'p22',name:'Hugely',nameKr:'휴즐리 제주',nameEn:'Hugely Cafe',category:'food',emoji:'☕',district:'济州西',planDate:'0320',desc:'设计感咖啡馆。',mapUrl:'https://www.google.com/maps/place/Hugely+Jeju/@33.5157726,126.5140094,17z',lat:33.5157726,lng:126.5140094,images:['image/Hugely1.jpeg','image/Hugely2.jpg']},
+  // ── 3/21 ──
+  {id:'p23',name:'牛岛',nameKr:'우도',nameEn:'Udo Island',category:'sight',emoji:'🏝️',district:'牛岛',planDate:'0321',desc:'济州东部离岛，骑行环岛。',mapUrl:'https://www.google.com/maps/place/Udo/@33.5042977,126.954048,17z',lat:33.5042977,lng:126.954048,images:['image/牛岛1.jpeg','image/牛岛2.jpeg']},
+  {id:'p24',name:'城山港客运码头',nameKr:'성산포항 여객터미널',nameEn:'Seongsan Pohang Terminal',category:'hotel',emoji:'⛴️',district:'济州东',planDate:'0321',desc:'去牛岛最主要的码头，约每30-60分钟一班船。',mapUrl:'https://www.google.com/maps/place/Seongsan+Pohang+Passenger+Terminal/@33.4728912,126.9346052,17z',lat:33.4728912,lng:126.9346052,images:['image/城山港客运码头.jpeg']},
+  {id:'p25',name:'钟达港',nameKr:'종달항',nameEn:'Jongdal Port',category:'hotel',emoji:'⛴️',district:'济州东',planDate:'0321',desc:'去牛岛的另一个码头，班次较少但停车方便。',mapUrl:'https://www.google.com/maps/search/%EC%A2%85%EB%8B%AC%ED%95%AD/@33.4600,126.8800,15z',lat:33.4600,lng:126.8800,images:['image/钟达港.webp']},
+  {id:'p26',name:'城山日出峰',nameKr:'성산일출봉',nameEn:'Seongsan Ilchulbong',category:'sight',emoji:'🌅',district:'济州东',planDate:'0321',desc:'世界自然遗产火山口。',mapUrl:'https://www.google.com/maps/place/Seongsan+Ilchulbong/@33.458056,126.9425,17z',lat:33.458056,lng:126.9425,images:['image/城山日出峰1.jpeg','image/城山日出峰2.jpeg']},
+  {id:'p27',name:'涉地可支',nameKr:'섭지코지',nameEn:'Seopjikoji',category:'sight',emoji:'🌿',district:'济州东',planDate:'0321',desc:'济州东海岸草原海景。',mapUrl:'https://www.google.com/maps/place/Seopjikoji/@33.4242095,126.931111,17z',lat:33.4242095,lng:126.931111,images:['image/涉地可支1.jpeg','image/涉地可支2.jpeg']},
+  {id:'p28',name:'Soseom 鲍鱼',nameKr:'소섬전복',nameEn:'Soseom Abalone',category:'food',emoji:'🐚',district:'济州东',planDate:'0321',desc:'鲍鱼料理餐厅。',mapUrl:'https://www.google.com/maps/place/Soseom+Jeonbok/@33.4988808,126.9651737,17z',lat:33.4988808,lng:126.9651737,images:['image/Soseom 鲍鱼.jpeg']},
+  {id:'p29',name:'海女之家',nameKr:'해녀의집',nameEn:'Haenyeo House',category:'food',emoji:'🧜‍♀️',district:'济州东',planDate:'0321',desc:'吃海女捕捞海鲜的餐厅。',mapUrl:'https://www.google.com/maps/place/%EC%9A%B0%EB%8F%84+%ED%95%B4%EB%85%80%EC%9D%98+%EC%A7%91/@33.4943693,126.945111,17z',lat:33.4943693,lng:126.945111,images:['image/海女之家1.jpeg','image/海女之家2.webp']},
+  {id:'p30',name:'BLANC ROCHER',nameKr:'블랑로쉐',nameEn:'Blanc Rocher',category:'food',emoji:'☕',district:'济州东',planDate:'0321',desc:'海景咖啡馆，可看牛岛。',mapUrl:'https://www.google.com/maps/place/Blanc+Rocher/@33.5156863,126.9580858,17z',lat:33.5156863,lng:126.9580858,images:['image/BLANC ROCHER1.jpg','image/BLANC ROCHER2.jpeg']},
+  {id:'p31',name:'东门市场',nameKr:'동문시장',nameEn:'Dongmun Market',category:'shopping',emoji:'🏪',district:'济州市区',planDate:'0321',desc:'济州最大传统市场。',mapUrl:'https://www.google.com/maps/place/%EB%8F%99%EB%AC%B8%EC%8B%9C%EC%9E%A5/@33.5126,126.5280,17z',lat:33.5126,lng:126.5280,images:['image/东门市场1.jpg','image/东门市场2.jpg']},
+  {id:'p32',name:'七星街',nameKr:'칠성로',nameEn:'Chilseong-ro',category:'shopping',emoji:'🛒',district:'济州市区',planDate:'0321',desc:'济州市区购物街。',mapUrl:'https://www.google.com/maps/place/%EC%B9%A0%EC%84%B1%EB%A1%9C/@33.4990,126.5280,17z',lat:33.4990,lng:126.5280,images:['image/七星街1.jpg']},
+];
 
 // ─── State ───
 let state = {
@@ -962,12 +1027,16 @@ function updateMapMarkers() {
       });
 
       const marker = L.marker([place.lat, place.lng], { icon }).addTo(map);
+      const popupImgs = (place.images || []).slice(0,1).map(src =>
+        `<img src="${src}" style="width:100%;border-radius:4px;margin:6px 0" onerror="this.style.display='none'">`
+      ).join('');
       marker.bindPopup(`
         <div class="popup-title">${place.emoji} ${place.name}</div>
         <div style="color:var(--text-dim);font-size:11px;">${DATE_SHORT[date]} ${slot}</div>
         ${memo ? `<div style="margin-top:4px;font-size:11px;">${memo}</div>` : ''}
+        ${popupImgs}
         <a class="popup-gmaps" href="${place.mapUrl}" target="_blank">📍 打开地图</a>
-      `);
+      `, { maxWidth: 250 });
       marker.on('click', () => handleDistClick(L.latLng(place.lat, place.lng), place.name));
       mapMarkers.push(marker);
       dayPoints.push([place.lat, place.lng]);
@@ -1001,12 +1070,12 @@ function renderSchedule() {
     DATES.forEach(d => {
       const key = d + '_' + slot;
       const items = state.schedule[key] || [];
-      html += `<td class="${isHalf ? 'half-hour' : ''}" onclick="openPlacePicker('${key}')">`;
+      html += `<td class="${isHalf ? 'half-hour' : ''}" data-slot="${key}" onclick="openPlacePicker('${key}')">`;
       items.forEach((item, idx) => {
         const place = findPlace(item.placeId);
         if (place) {
           const catColor = CATEGORY_STYLE[place.category]?.color || '#888';
-          html += `<div class="sched-card" style="border-left-color:${catColor}" onclick="event.stopPropagation();openCardDetail('${key}',${idx})">
+          html += `<div class="sched-card" style="border-left-color:${catColor}" data-slot="${key}" data-idx="${idx}" onclick="event.stopPropagation();openCardDetail('${key}',${idx})">
             <span class="sc-emoji">${place.emoji}</span>
             <span class="sc-name">${place.name}</span>
             ${item.memo ? `<span class="sc-memo">${item.memo}</span>` : ''}
@@ -1020,6 +1089,7 @@ function renderSchedule() {
 
   html += '</tbody></table>';
   wrap.innerHTML = html;
+  initScheduleDrag();
 }
 
 function openPlacePicker(slotKey) {
@@ -1037,10 +1107,10 @@ function openPlacePicker(slotKey) {
 
   const cats = [
     { key:'all', label:'全部' },
-    { key:'hotel', label:'🏨 住宿' },
-    { key:'food', label:'🍜 美食' },
-    { key:'sight', label:'🗺️ 观光' },
-    { key:'transport', label:'🚇 交通' },
+    { key:'hotel', label:'🏨 交通住宿' },
+    { key:'food', label:'☕ 美食咖啡' },
+    { key:'sight', label:'🗺️ 景点游玩' },
+    { key:'shopping', label:'🛍️ 买买买买' },
   ];
 
   openModal(`
@@ -1081,12 +1151,31 @@ function openCardDetail(slotKey, idx) {
   const place = findPlace(item.placeId);
   if (!place) return;
 
+  const [curDate, curTime] = slotKey.split('_');
+  const curDateLabel = DATE_LABELS[curDate] || curDate;
+  const curTimeLabel = curTime.split(':')[0].padStart(2,'0') + ':' + curTime.split(':')[1];
+
   openModal(`
     <div class="card-detail-modal">
       <div class="cd-place"><span style="font-size:28px">${place.emoji}</span> ${place.name}</div>
       <div class="modal-field">
         <label>备注</label>
         <input type="text" id="cdMemo" value="${item.memo || ''}" placeholder="输入备注..." onchange="updateCardMemo('${slotKey}',${idx},this.value)">
+      </div>
+      <div class="modal-field">
+        <label>当前时段：${curDateLabel} ${curTimeLabel}</label>
+        <div style="display:flex;gap:8px;margin-top:6px">
+          <select id="moveDate" style="flex:1;padding:8px;border-radius:8px;border:1px solid var(--border);font-family:inherit;font-size:13px">
+            ${DATES.map(d => `<option value="${d}" ${d===curDate?'selected':''}>${DATE_LABELS[d]}</option>`).join('')}
+          </select>
+          <select id="moveTime" style="flex:1;padding:8px;border-radius:8px;border:1px solid var(--border);font-family:inherit;font-size:13px">
+            ${TIME_SLOTS.map(t => {
+              const tl = t.split(':')[0].padStart(2,'0')+':'+t.split(':')[1];
+              return `<option value="${t}" ${t===curTime?'selected':''}>${tl}</option>`;
+            }).join('')}
+          </select>
+        </div>
+        <button class="cd-action-btn" style="margin-top:8px;width:100%" onclick="moveScheduleItem('${slotKey}',${idx})">🔄 更改时段</button>
       </div>
       <div class="cd-actions">
         <a class="cd-action-btn" href="${place.mapUrl}" target="_blank">📍 打开地图</a>
@@ -1103,6 +1192,22 @@ function updateCardMemo(slotKey, idx, memo) {
   }
 }
 
+function moveScheduleItem(slotKey, idx) {
+  const newDate = document.getElementById('moveDate').value;
+  const newTime = document.getElementById('moveTime').value;
+  const newKey = newDate + '_' + newTime;
+  if (newKey === slotKey) { closeModal(); return; }
+  const item = state.schedule[slotKey]?.[idx];
+  if (!item) return;
+  state.schedule[slotKey].splice(idx, 1);
+  if (state.schedule[slotKey].length === 0) delete state.schedule[slotKey];
+  if (!state.schedule[newKey]) state.schedule[newKey] = [];
+  state.schedule[newKey].push(item);
+  saveToUrl();
+  closeModal();
+  renderSchedule();
+}
+
 function removeFromSchedule(slotKey, idx) {
   if (state.schedule[slotKey]) {
     state.schedule[slotKey].splice(idx, 1);
@@ -1113,30 +1218,234 @@ function removeFromSchedule(slotKey, idx) {
   }
 }
 
+// ─── 长按拖拽 (Long-press Drag & Drop) ───
+let dragState = null;
+let longPressTimer = null;
+let _dragInited = false;
+
+function initScheduleDrag() {
+  if (_dragInited) return;
+  _dragInited = true;
+
+  // Use event delegation on document so it works after re-render
+  document.addEventListener('mousedown', onDragMouseDown);
+  document.addEventListener('mousemove', onDragMouseMove);
+  document.addEventListener('mouseup', onDragMouseUp);
+  document.addEventListener('touchstart', onDragTouchStart, { passive: false });
+  document.addEventListener('touchmove', onDragTouchMove, { passive: false });
+  document.addEventListener('touchend', onDragTouchEnd);
+  document.addEventListener('touchcancel', onDragTouchEnd);
+}
+
+function isInSchedule(el) {
+  return !!el?.closest('#scheduleWrap');
+}
+
+function findSchedCard(el) {
+  while (el && !el.classList?.contains('sched-card')) el = el.parentElement;
+  return (el && isInSchedule(el)) ? el : null;
+}
+
+function findDropCell(x, y) {
+  // Temporarily hide ghost so elementsFromPoint can see through it
+  if (dragState?.ghost) dragState.ghost.style.display = 'none';
+  const els = document.elementsFromPoint(x, y);
+  if (dragState?.ghost) dragState.ghost.style.display = '';
+  for (const el of els) {
+    if (el.tagName === 'TD' && el.dataset.slot) return el;
+  }
+  return null;
+}
+
+function createGhost(card) {
+  const ghost = document.createElement('div');
+  ghost.className = 'drag-ghost';
+  ghost.innerHTML = card.innerHTML;
+  ghost.style.borderLeftColor = card.style.borderLeftColor;
+  document.body.appendChild(ghost);
+  return ghost;
+}
+
+function startDrag(card, x, y) {
+  const slot = card.dataset.slot;
+  const idx = parseInt(card.dataset.idx);
+  const ghost = createGhost(card);
+  ghost.style.left = (x - 60) + 'px';
+  ghost.style.top = (y - 16) + 'px';
+  card.classList.add('dragging');
+  dragState = { ...dragState, ghost, slot, idx, started: true, didDrag: true };
+  if (navigator.vibrate) navigator.vibrate(30);
+}
+
+function moveDrag(x, y) {
+  if (!dragState?.started) return;
+  dragState.ghost.style.left = (x - 60) + 'px';
+  dragState.ghost.style.top = (y - 16) + 'px';
+
+  document.querySelectorAll('.drag-over').forEach(el => el.classList.remove('drag-over'));
+  const cell = findDropCell(x, y);
+  if (cell) cell.classList.add('drag-over');
+}
+
+function endDrag(x, y) {
+  if (!dragState?.started) { cleanupDrag(); return; }
+
+  document.querySelectorAll('.drag-over').forEach(el => el.classList.remove('drag-over'));
+  const cell = findDropCell(x, y);
+
+  if (cell) {
+    const targetSlot = cell.dataset.slot;
+    const sourceSlot = dragState.slot;
+    const sourceIdx = dragState.idx;
+    const item = state.schedule[sourceSlot]?.[sourceIdx];
+
+    if (item && (targetSlot !== sourceSlot)) {
+      state.schedule[sourceSlot].splice(sourceIdx, 1);
+      if (state.schedule[sourceSlot].length === 0) delete state.schedule[sourceSlot];
+      if (!state.schedule[targetSlot]) state.schedule[targetSlot] = [];
+      state.schedule[targetSlot].push(item);
+      saveToUrl();
+      renderSchedule();
+    }
+  }
+
+  cleanupDrag();
+}
+
+function cleanupDrag() {
+  clearTimeout(longPressTimer);
+  if (dragState) {
+    if (dragState.ghost) dragState.ghost.remove();
+    if (dragState.card) dragState.card.classList.remove('dragging');
+  }
+  dragState = null;
+  document.querySelectorAll('.drag-over').forEach(el => el.classList.remove('drag-over'));
+}
+
+// Suppress click after drag
+let _suppressClick = false;
+document.addEventListener('click', function(e) {
+  if (_suppressClick) {
+    e.stopPropagation();
+    e.preventDefault();
+    _suppressClick = false;
+  }
+}, true);
+
+// Touch events
+function onDragTouchStart(e) {
+  const card = findSchedCard(e.target);
+  if (!card) return;
+  const touch = e.touches[0];
+  dragState = { card, slot: card.dataset.slot, idx: parseInt(card.dataset.idx), started: false, didDrag: false, startX: touch.clientX, startY: touch.clientY };
+  longPressTimer = setTimeout(() => {
+    startDrag(card, touch.clientX, touch.clientY);
+  }, 350);
+}
+
+function onDragTouchMove(e) {
+  if (!dragState) return;
+  const touch = e.touches[0];
+  if (!dragState.started) {
+    const dx = Math.abs(touch.clientX - dragState.startX);
+    const dy = Math.abs(touch.clientY - dragState.startY);
+    if (dx > 8 || dy > 8) { clearTimeout(longPressTimer); cleanupDrag(); }
+    return;
+  }
+  e.preventDefault();
+  moveDrag(touch.clientX, touch.clientY);
+}
+
+function onDragTouchEnd(e) {
+  clearTimeout(longPressTimer);
+  if (dragState?.started) {
+    e.preventDefault();
+    _suppressClick = true;
+    const touch = e.changedTouches[0];
+    endDrag(touch.clientX, touch.clientY);
+    setTimeout(() => { _suppressClick = false; }, 300);
+  } else {
+    cleanupDrag();
+  }
+}
+
+// Mouse events
+function onDragMouseDown(e) {
+  const card = findSchedCard(e.target);
+  if (!card) return;
+  e.preventDefault();
+  dragState = { card, slot: card.dataset.slot, idx: parseInt(card.dataset.idx), started: false, didDrag: false, startX: e.clientX, startY: e.clientY };
+  longPressTimer = setTimeout(() => {
+    startDrag(card, e.clientX, e.clientY);
+  }, 350);
+}
+
+function onDragMouseMove(e) {
+  if (!dragState) return;
+  if (!dragState.started) {
+    const dx = Math.abs(e.clientX - dragState.startX);
+    const dy = Math.abs(e.clientY - dragState.startY);
+    if (dx > 8 || dy > 8) { clearTimeout(longPressTimer); cleanupDrag(); }
+    return;
+  }
+  e.preventDefault();
+  moveDrag(e.clientX, e.clientY);
+}
+
+function onDragMouseUp(e) {
+  clearTimeout(longPressTimer);
+  if (dragState?.started) {
+    _suppressClick = true;
+    endDrag(e.clientX, e.clientY);
+    setTimeout(() => { _suppressClick = false; }, 300);
+  } else {
+    cleanupDrag();
+  }
+}
+
 // ─── PLACES ───
-let placesFilter = 'all';
+let filterDate = 'all', filterDistrict = 'all', filterCat = 'all';
 
 function renderPlaces() {
   const wrap = document.getElementById('placesWrap');
-  const cats = [
-    { key:'all', label:'全部' },
-    { key:'hotel', label:'🏨 住宿' },
-    { key:'food', label:'🍜 美食' },
-    { key:'sight', label:'🗺️ 观光' },
-    { key:'transport', label:'🚇 交通' },
+
+  // 三种过滤器
+  const dateOpts = [
+    {key:'all',label:'全部'},
+    {key:'0319',label:'3/19'},{key:'0320',label:'3/20'},{key:'0321',label:'3/21'}
+  ];
+  const districtOpts = [
+    {key:'all',label:'全部'},
+    ...DISTRICT_ORDER.map(d => ({key:d,label:d}))
+  ];
+  const catOpts = [
+    {key:'all',label:'全部'},
+    {key:'hotel',label:'🏨 交通住宿'},{key:'sight',label:'🗺️ 景点游玩'},
+    {key:'food',label:'☕ 美食咖啡'},{key:'shopping',label:'🛍️ 买买买买'},
   ];
 
-  const places = allPlaces().filter(p => placesFilter === 'all' || p.category === placesFilter);
+  let places = allPlaces();
+  if (filterDate !== 'all') places = places.filter(p => p.planDate === filterDate);
+  if (filterDistrict !== 'all') places = places.filter(p => p.district === filterDistrict);
+  if (filterCat !== 'all') places = places.filter(p => p.category === filterCat);
   places.sort((a, b) => {
     const ai = DISTRICT_ORDER.indexOf(a.district || '');
     const bi = DISTRICT_ORDER.indexOf(b.district || '');
     return (ai === -1 ? 999 : ai) - (bi === -1 ? 999 : bi);
   });
 
-  let html = '<div class="filter-bar">';
-  cats.forEach(c => {
-    html += `<button class="filter-btn${c.key===placesFilter?' active':''}" onclick="setPlacesFilter('${c.key}')">${c.label}</button>`;
-  });
+  let html = '';
+  // 原计划 filter
+  html += '<div style="font-size:11px;color:var(--text-dim);margin-bottom:4px">原计划</div><div class="filter-bar">';
+  dateOpts.forEach(c => { html += `<button class="filter-btn${c.key===filterDate?' active':''}" onclick="setFilter('date','${c.key}')">${c.label}</button>`; });
+  html += '</div>';
+  // 区域 filter
+  html += '<div style="font-size:11px;color:var(--text-dim);margin-bottom:4px">区域</div><div class="filter-bar">';
+  districtOpts.forEach(c => { html += `<button class="filter-btn${c.key===filterDistrict?' active':''}" onclick="setFilter('district','${c.key}')">${c.label}</button>`; });
+  html += '</div>';
+  // 分类 filter
+  html += '<div style="font-size:11px;color:var(--text-dim);margin-bottom:4px">分类</div><div class="filter-bar" style="margin-bottom:8px">';
+  catOpts.forEach(c => { html += `<button class="filter-btn${c.key===filterCat?' active':''}" onclick="setFilter('cat','${c.key}')">${c.label}</button>`; });
   html += '</div>';
 
   let lastDistrict = null;
@@ -1148,19 +1457,17 @@ function renderPlaces() {
       lastDistrict = p.district;
     }
     const cs = CATEGORY_STYLE[p.category] || { color:'#888', label:'其他' };
+    const dateLabel = DATE_SHORT[p.planDate] || '';
     html += `
-      <div class="place-card">
+      <div class="place-card" onclick="openPlaceDetail('${p.id}')" style="cursor:pointer">
         <div class="pc-top">
           <span class="pc-emoji">${p.emoji}</span>
           <span class="pc-name">${p.name}</span>
         </div>
-        ${p.desc ? `<div style="font-size:10px;color:var(--text-dim);line-height:1.4;margin:-2px 0 2px">${p.desc}</div>` : ''}
-        <span class="pc-cat" style="background:${cs.color}22;color:${cs.color}">${cs.label}</span>
-        <div class="pc-actions">
-          <a class="pc-btn" href="${p.mapUrl}" target="_blank" style="text-decoration:none">📍 地图</a>
-          <button class="pc-btn" onclick="openPlaceEditModal('${p.id}')">✏️ 编辑</button>
-          <button class="pc-btn" onclick="openScheduleAddFromPlace('${p.id}')">📅 添加</button>
-          <button class="pc-btn danger" onclick="deletePlace('${p.id}')">🗑️</button>
+        ${p.desc ? `<div style="font-size:10px;color:var(--text-dim);line-height:1.4;margin:-2px 0 2px;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical">${p.desc}</div>` : ''}
+        <div style="display:flex;gap:4px;flex-wrap:wrap">
+          <span class="pc-cat" style="background:${cs.color}22;color:${cs.color}">${cs.label}</span>
+          ${dateLabel ? `<span class="pc-cat" style="background:#e1bee722;color:#9575cd">${dateLabel}</span>` : ''}
         </div>
       </div>
     `;
@@ -1171,8 +1478,39 @@ function renderPlaces() {
   wrap.innerHTML = html;
 }
 
+// 点击景点卡片 → 弹出详情（含图片）
+function openPlaceDetail(id) {
+  const p = findPlace(id);
+  if (!p) return;
+  const cs = CATEGORY_STYLE[p.category] || { color:'#888', label:'其他' };
+  const imgs = (p.images || []).map(src =>
+    `<img src="${src}" style="width:100%;border-radius:8px;margin-bottom:8px" onerror="this.style.display='none'">`
+  ).join('');
+  openModal(`
+    <div class="card-detail-modal">
+      <div class="cd-place"><span style="font-size:28px">${p.emoji}</span> ${p.name}</div>
+      ${p.nameKr ? `<div style="font-size:12px;color:var(--text-dim);margin:-8px 0 4px">${p.nameKr} / ${p.nameEn||''}</div>` : ''}
+      ${p.desc ? `<div style="font-size:13px;margin-bottom:12px;line-height:1.6">${p.desc}</div>` : ''}
+      ${imgs ? `<div style="margin-bottom:12px">${imgs}</div>` : ''}
+      <div class="cd-actions">
+        <a class="cd-action-btn" href="${p.mapUrl}" target="_blank">📍 打开地图</a>
+        <button class="cd-action-btn" onclick="closeModal();openScheduleAddFromPlace('${p.id}')">📅 添加到行程</button>
+        <button class="cd-action-btn" onclick="closeModal();openPlaceEditModal('${p.id}')">✏️ 编辑</button>
+        <button class="cd-action-btn danger" onclick="deletePlace('${p.id}');closeModal()">🗑️ 删除</button>
+      </div>
+    </div>
+  `);
+}
+
+function setFilter(type, val) {
+  if (type === 'date') filterDate = val;
+  if (type === 'district') filterDistrict = val;
+  if (type === 'cat') filterCat = val;
+  renderPlaces();
+}
+
 function setPlacesFilter(cat) {
-  placesFilter = cat;
+  filterCat = cat;
   renderPlaces();
 }
 
@@ -1235,10 +1573,10 @@ function openAddPlaceModal() {
     <div class="modal-field">
       <label>类别</label>
       <select id="newPlaceCat">
-        <option value="hotel">🏨 住宿</option>
-        <option value="food">🍜 美食</option>
-        <option value="sight" selected>🗺️ 观光</option>
-        <option value="transport">🚇 交通</option>
+        <option value="hotel">🏨 交通住宿</option>
+        <option value="food">☕ 美食咖啡</option>
+        <option value="sight" selected>🗺️ 景点游玩</option>
+        <option value="shopping">🛍️ 买买买买</option>
       </select>
     </div>
     <div class="modal-field">
@@ -1399,10 +1737,10 @@ function openPlaceEditModal(id) {
     <div class="modal-field">
       <label>类别</label>
       <select id="editPlaceCat">
-        <option value="hotel" ${place.category==='hotel'?'selected':''}>🏨 住宿</option>
-        <option value="food" ${place.category==='food'?'selected':''}>🍜 美食</option>
-        <option value="sight" ${place.category==='sight'?'selected':''}>🗺️ 观光</option>
-        <option value="transport" ${place.category==='transport'?'selected':''}>🚇 交通</option>
+        <option value="hotel" ${place.category==='hotel'?'selected':''}>🏨 交通住宿</option>
+        <option value="food" ${place.category==='food'?'selected':''}>☕ 美食咖啡</option>
+        <option value="sight" ${place.category==='sight'?'selected':''}>🗺️ 景点游玩</option>
+        <option value="shopping" ${place.category==='shopping'?'selected':''}>🛍️ 买买买买</option>
       </select>
     </div>
     <div class="modal-field">
