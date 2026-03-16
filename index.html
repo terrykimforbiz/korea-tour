@@ -494,6 +494,73 @@ nav.tab-bar button.active::before {
 .memo-textarea:focus { border-color: var(--primary); }
 .memo-textarea::placeholder { color: var(--text-dim); }
 
+/* ── Currency tab ── */
+.currency-wrap { padding: 16px; }
+.currency-title { font-size: 18px; text-align: center; margin-bottom: 4px; color: var(--primary-dark); }
+.currency-rate-info { font-size: 11px; text-align: center; color: var(--text-dim); margin-bottom: 14px; }
+.currency-rate-info .rate-val { color: var(--primary-dark); font-weight: bold; }
+
+.currency-input-box {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px;
+  margin-bottom: 12px;
+}
+.currency-input-box label {
+  font-size: 13px; color: var(--text-dim); display: block; margin-bottom: 6px;
+}
+.currency-input-row {
+  display: flex; align-items: center; gap: 8px;
+}
+.currency-input-row input {
+  width: 0; flex: 1; min-width: 0;
+  font-family: Calibri, 'Segoe UI', Arial, sans-serif;
+  font-size: 28px;
+  border: none; border-bottom: 2px solid var(--primary-light);
+  background: transparent; color: var(--text);
+  padding: 6px 0; outline: none;
+  text-align: right;
+}
+.currency-input-row input:focus { border-bottom-color: var(--primary); }
+.currency-input-row .unit { font-size: 16px; color: var(--text-dim); white-space: nowrap; flex-shrink: 0; }
+
+.currency-result-box {
+  background: linear-gradient(135deg, #ede7f6 0%, #fce4ec 100%);
+  border-radius: var(--radius);
+  padding: 18px 16px;
+  text-align: center;
+  margin-bottom: 16px;
+}
+.currency-result-label { font-size: 13px; color: var(--text-dim); margin-bottom: 4px; }
+.currency-result-value { font-size: 34px; color: var(--primary-dark); font-family: Calibri, 'Segoe UI', Arial, sans-serif; }
+
+.currency-presets-title {
+  font-size: 13px; color: var(--text-dim); margin-bottom: 10px;
+  display: flex; align-items: center; justify-content: space-between;
+}
+.currency-presets-title .reset-btn {
+  font-size: 11px; color: var(--primary); background: none; border: 1px solid var(--primary-light);
+  border-radius: 12px; padding: 2px 10px; cursor: pointer; font-family: inherit;
+}
+.currency-presets-title .reset-btn:active { background: var(--primary-light); }
+.currency-presets {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px;
+}
+.currency-preset-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px 6px;
+  text-align: center;
+  cursor: pointer;
+  transition: all .2s;
+  -webkit-user-select: none; user-select: none;
+}
+.currency-preset-card:active { transform: scale(.95); background: var(--card-hover); }
+.currency-preset-krw { font-size: 13px; color: var(--text-dim); margin-bottom: 2px; font-family: Calibri, 'Segoe UI', Arial, sans-serif; }
+.currency-preset-cny { font-size: 16px; color: var(--primary-dark); font-family: Calibri, 'Segoe UI', Arial, sans-serif; }
+
 /* ── Modal ── */
 .modal-overlay {
   position: fixed; inset: 0;
@@ -728,12 +795,18 @@ nav.tab-bar button.active::before {
   <div class="memo-wrap" id="memoWrap"></div>
 </div>
 
+<!-- Currency -->
+<div class="tab-content" id="tab-currency">
+  <div class="currency-wrap" id="currencyWrap"></div>
+</div>
+
 <!-- Tab bar -->
 <nav class="tab-bar">
   <button class="active" data-tab="tab-map"><span class="tab-icon">🗺️</span>地图</button>
   <button data-tab="tab-schedule"><span class="tab-icon">📅</span>行程</button>
   <button data-tab="tab-places"><span class="tab-icon">📍</span>景点</button>
   <button data-tab="tab-memo"><span class="tab-icon">📝</span>备忘</button>
+  <button data-tab="tab-currency"><span class="tab-icon">💱</span>汇率</button>
 </nav>
 
 <!-- Modal container -->
@@ -938,6 +1011,7 @@ document.querySelectorAll('.tab-bar button').forEach(btn => {
     if (tabId === 'tab-schedule') renderSchedule();
     if (tabId === 'tab-places') renderPlaces();
     if (tabId === 'tab-memo') renderMemo();
+    if (tabId === 'tab-currency') renderCurrency();
   });
 });
 
@@ -1978,6 +2052,92 @@ function saveMemo() {
   saveToUrl();
 }
 
+// ─── CURRENCY ───
+let currencyRate = 185;
+let currencyRateLoaded = false;
+let currencyRateTime = '';
+
+function fetchExchangeRate() {
+  fetch('https://open.er-api.com/v6/latest/CNY')
+    .then(r => r.json())
+    .then(data => {
+      if (data && data.rates && data.rates.KRW) {
+        currencyRate = Math.round(data.rates.KRW * 100) / 100;
+        currencyRateLoaded = true;
+        currencyRateTime = new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+        if (currentTab === 'tab-currency') renderCurrency();
+      }
+    })
+    .catch(() => {
+      currencyRateLoaded = false;
+    });
+}
+
+let currentKrwValue = 0;
+
+function renderCurrency() {
+  const wrap = document.getElementById('currencyWrap');
+  const presets = [100, 500, 1000, 5000, 10000, 50000];
+  const rateStatus = currencyRateLoaded
+    ? `实时汇率 <span class="rate-val">1 CNY ≈ ${currencyRate} KRW</span> (${currencyRateTime} 更新)`
+    : `默认汇率 <span class="rate-val">1 CNY ≈ ${currencyRate} KRW</span> (加载中...)`;
+  const cny = currentKrwValue / currencyRate;
+
+  let html = `
+    <div class="currency-title">韩元 → 人民币 换算</div>
+    <div class="currency-rate-info">${rateStatus}</div>
+    <div class="currency-input-box">
+      <label>输入韩元金额 (KRW)</label>
+      <div class="currency-input-row">
+        <span class="unit">₩</span>
+        <input type="text" id="krwInput" value="${currentKrwValue ? currentKrwValue.toLocaleString() : ''}" placeholder="0" oninput="onKrwInput(this)" inputmode="numeric">
+      </div>
+    </div>
+    <div class="currency-result-box">
+      <div class="currency-result-label">约合人民币 (CNY)</div>
+      <div class="currency-result-value" id="cnyResult">¥ ${cny.toFixed(2)}</div>
+    </div>
+    <div class="currency-presets-title">
+      <span>点击累加金额</span>
+      <button class="reset-btn" onclick="resetKrw()">清零</button>
+    </div>
+    <div class="currency-presets">
+      ${presets.map(krw => `
+        <div class="currency-preset-card" onclick="addKrw(${krw})">
+          <div class="currency-preset-krw">+ ₩${krw.toLocaleString()}</div>
+          <div class="currency-preset-cny">¥ ${(krw / currencyRate).toFixed(2)}</div>
+        </div>
+      `).join('')}
+    </div>
+  `;
+  wrap.innerHTML = html;
+}
+
+function onKrwInput(el) {
+  const raw = el.value.replace(/[^0-9]/g, '');
+  currentKrwValue = parseInt(raw) || 0;
+  el.value = currentKrwValue ? currentKrwValue.toLocaleString() : '';
+  calcCurrency();
+}
+
+function calcCurrency() {
+  const cny = currentKrwValue / currencyRate;
+  document.getElementById('cnyResult').textContent = `¥ ${cny.toFixed(2)}`;
+}
+
+function addKrw(val) {
+  currentKrwValue += val;
+  const input = document.getElementById('krwInput');
+  input.value = currentKrwValue.toLocaleString();
+  calcCurrency();
+}
+
+function resetKrw() {
+  currentKrwValue = 0;
+  document.getElementById('krwInput').value = '';
+  calcCurrency();
+}
+
 // ─── Init ───
 initState();
 updateTWTime();
@@ -1987,6 +2147,7 @@ updateMapMarkers();
 renderSchedule();
 renderPlaces();
 renderMemo();
+fetchExchangeRate();
 </script>
 </body>
 </html>
